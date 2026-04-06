@@ -206,6 +206,9 @@ export async function rebuildDailyProfitability(input: RebuildProfitabilityInput
         }))
       });
     }
+  }, {
+    maxWait: 60_000,
+    timeout: 60_000
   });
 
   return {
