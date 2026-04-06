@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".test-dist",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "declaration": false,
+    "incremental": false,
+    "plugins": []
+  },
+  "include": [
+    "src/lib/unit-economics/**/*.ts",
+    "src/server/modules/sku/**/*.ts",
+    "src/server/modules/ops-audit/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": ["node_modules", ".next"]
+}

@@ -1,0 +1,476 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ANALYST
+}
+
+enum WorkspaceInviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum WbConnectionStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+enum SyncTrigger {
+  MANUAL
+  SCHEDULED
+}
+
+enum SyncRunStatus {
+  SCHEDULED
+  IMPORTING
+  NORMALIZING
+  CALCULATING
+  GENERATING_INSIGHTS
+  PROJECTING_CASH
+  COMPLETED
+  FAILED
+}
+
+enum RawSourceType {
+  PRODUCTS
+  SALES
+  FEES
+  PAYOUTS
+}
+
+enum SkuStatus {
+  ACTIVE
+  ARCHIVED
+  PLACEHOLDER
+}
+
+enum NormalizedRecordType {
+  SALE
+  FEE
+}
+
+enum CommitmentType {
+  TAX
+  PAYROLL
+  SUPPLIER
+  OPERATIONS
+  OTHER
+}
+
+enum RiskLevel {
+  CLEAR
+  WATCH
+  RISK
+}
+
+enum InsightKind {
+  DAILY_BRIEF
+  SKU_EXPLANATION
+  CASH_GAP
+}
+
+enum InsightStatus {
+  GENERATED
+  FALLBACK
+  FAILED
+}
+
+enum BriefStatus {
+  GENERATED
+  FAILED
+}
+
+enum AuditActorType {
+  SYSTEM
+  USER
+}
+
+model Organization {
+  id                       String                      @id @default(cuid())
+  slug                     String                      @unique
+  name                     String
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+  users                    User[]
+  wbConnections            WBConnection[]
+  syncRuns                 SyncRun[]
+  rawBatches               RawIngestionBatch[]
+  skus                     SKU[]
+  costProfiles             CostProfile[]
+  normalizedRecords        NormalizedFinancialRecord[]
+  dailySkuMetrics          DailySkuMetric[]
+  dailyAccountMetrics      DailyAccountMetric[]
+  payoutForecasts          PayoutForecast[]
+  cashSnapshots            CashSnapshot[]
+  cashCommitments          CashCommitment[]
+  riskAssessments          RiskAssessment[]
+  dailyBriefs              DailyBrief[]
+  aiInsights               AIInsight[]
+  auditLogs                AuditLog[]
+  invites                  WorkspaceInvite[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  organizationId String
+  email          String       @unique
+  name           String
+  role           UserRole
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model WorkspaceInvite {
+  id              String                @id @default(cuid())
+  organizationId  String
+  email           String
+  role            UserRole
+  token           String                @unique
+  status          WorkspaceInviteStatus @default(PENDING)
+  invitedByUserId String?
+  acceptedUserId  String?
+  expiresAt       DateTime?
+  acceptedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, email])
+  @@index([email, status])
+}
+
+model WBConnection {
+  id                String             @id @default(cuid())
+  organizationId    String
+  name              String
+  cabinetId         String?
+  apiTokenEncrypted String
+  status            WbConnectionStatus @default(DISCONNECTED)
+  lastVerifiedAt    DateTime?
+  lastSyncAt        DateTime?
+  lastError         String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRuns          SyncRun[]
+
+  @@index([organizationId, status])
+}
+
+model SyncRun {
+  id             String        @id @default(cuid())
+  organizationId String
+  connectionId   String
+  trigger        SyncTrigger
+  status         SyncRunStatus @default(SCHEDULED)
+  fromDate       DateTime
+  toDate         DateTime
+  startedAt      DateTime      @default(now())
+  finishedAt     DateTime?
+  errorMessage   String?
+  stats          Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connection     WBConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  rawBatches     RawIngestionBatch[]
+  normalizedRecords NormalizedFinancialRecord[]
+  payoutForecasts PayoutForecast[]
+  dailyBriefs    DailyBrief[]
+  aiInsights     AIInsight[]
+
+  @@index([organizationId, startedAt])
+}
+
+model RawIngestionBatch {
+  id              String          @id @default(cuid())
+  organizationId  String
+  syncRunId       String
+  sourceType      RawSourceType
+  sourceDate      DateTime
+  recordCount     Int
+  payloadChecksum String?
+  createdAt       DateTime        @default(now())
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRun         SyncRun         @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+  records         RawWBRecord[]
+
+  @@index([organizationId, sourceType, sourceDate])
+}
+
+model RawWBRecord {
+  id           String            @id @default(cuid())
+  batchId      String
+  recordType   String
+  externalId   String?
+  occurredAt   DateTime?
+  payload      Json
+  createdAt    DateTime          @default(now())
+  batch        RawIngestionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, recordType])
+}
+
+model SKU {
+  id             String       @id @default(cuid())
+  organizationId String
+  wbNmId         String
+  vendorCode     String?
+  title          String
+  brand          String?
+  subject        String?
+  status         SkuStatus    @default(ACTIVE)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  costProfiles   CostProfile[]
+  normalizedRecords NormalizedFinancialRecord[]
+  dailyMetrics   DailySkuMetric[]
+  aiInsights     AIInsight[]
+
+  @@unique([organizationId, wbNmId])
+  @@index([organizationId, title])
+}
+
+model CostProfile {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  skuId              String
+  effectiveFrom      DateTime
+  cogsRub            Decimal      @db.Decimal(14, 2)
+  packagingRub       Decimal      @default(0) @db.Decimal(14, 2)
+  handlingRub        Decimal      @default(0) @db.Decimal(14, 2)
+  otherUnitCostRub   Decimal      @default(0) @db.Decimal(14, 2)
+  notes              String?
+  isComplete         Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sku                SKU          @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([skuId, effectiveFrom])
+  @@index([organizationId, effectiveFrom])
+}
+
+model NormalizedFinancialRecord {
+  id                 String               @id @default(cuid())
+  organizationId     String
+  syncRunId          String
+  skuId              String
+  rawRecordId        String?
+  recordType         NormalizedRecordType
+  recordDate         DateTime
+  sourceExternalId   String
+  soldUnits          Int                  @default(0)
+  returnedUnits      Int                  @default(0)
+  grossRevenueRub    Decimal              @default(0) @db.Decimal(14, 2)
+  discountRub        Decimal              @default(0) @db.Decimal(14, 2)
+  refundRub          Decimal              @default(0) @db.Decimal(14, 2)
+  commissionRub      Decimal              @default(0) @db.Decimal(14, 2)
+  logisticsRub       Decimal              @default(0) @db.Decimal(14, 2)
+  storageRub         Decimal              @default(0) @db.Decimal(14, 2)
+  penaltyRub         Decimal              @default(0) @db.Decimal(14, 2)
+  returnCostRub      Decimal              @default(0) @db.Decimal(14, 2)
+  payload            Json?
+  createdAt          DateTime             @default(now())
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRun            SyncRun              @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+  sku                SKU                  @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, recordType, sourceExternalId])
+  @@index([organizationId, recordDate])
+  @@index([skuId, recordDate])
+}
+
+model DailySkuMetric {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  skuId                 String
+  metricDate            DateTime
+  soldUnits             Int          @default(0)
+  returnedUnits         Int          @default(0)
+  netUnits              Int          @default(0)
+  grossRevenueRub       Decimal      @default(0) @db.Decimal(14, 2)
+  netRevenueRub         Decimal      @default(0) @db.Decimal(14, 2)
+  commissionRub         Decimal      @default(0) @db.Decimal(14, 2)
+  logisticsRub          Decimal      @default(0) @db.Decimal(14, 2)
+  storageRub            Decimal      @default(0) @db.Decimal(14, 2)
+  penaltyRub            Decimal      @default(0) @db.Decimal(14, 2)
+  returnCostRub         Decimal      @default(0) @db.Decimal(14, 2)
+  cogsRub               Decimal      @default(0) @db.Decimal(14, 2)
+  packagingRub          Decimal      @default(0) @db.Decimal(14, 2)
+  handlingRub           Decimal      @default(0) @db.Decimal(14, 2)
+  otherUnitCostRub      Decimal      @default(0) @db.Decimal(14, 2)
+  contributionProfitRub Decimal      @default(0) @db.Decimal(14, 2)
+  marginPct             Decimal      @default(0) @db.Decimal(7, 4)
+  hasIncompleteCosts    Boolean      @default(false)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sku                   SKU          @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, skuId, metricDate])
+  @@index([organizationId, metricDate])
+}
+
+model DailyAccountMetric {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  metricDate            DateTime
+  totalRevenueRub       Decimal      @default(0) @db.Decimal(14, 2)
+  totalContributionRub  Decimal      @default(0) @db.Decimal(14, 2)
+  averageMarginPct      Decimal      @default(0) @db.Decimal(7, 4)
+  profitableSkuCount    Int          @default(0)
+  lossMakingSkuCount    Int          @default(0)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metricDate])
+  @@index([organizationId, metricDate])
+}
+
+model PayoutForecast {
+  id                String       @id @default(cuid())
+  organizationId    String
+  syncRunId         String
+  forecastDate      DateTime
+  sourceExternalId  String
+  amountRub         Decimal      @db.Decimal(14, 2)
+  createdAt         DateTime     @default(now())
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRun           SyncRun      @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sourceExternalId])
+  @@index([organizationId, forecastDate])
+}
+
+model CashSnapshot {
+  id             String       @id @default(cuid())
+  organizationId String
+  snapshotDate   DateTime
+  availableRub   Decimal      @db.Decimal(14, 2)
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, snapshotDate])
+  @@index([organizationId, snapshotDate])
+}
+
+model CashCommitment {
+  id             String         @id @default(cuid())
+  organizationId String
+  title          String
+  commitmentType CommitmentType
+  dueDate        DateTime
+  amountRub      Decimal        @db.Decimal(14, 2)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, dueDate])
+}
+
+model RiskAssessment {
+  id                   String                @id @default(cuid())
+  organizationId       String
+  assessmentDate       DateTime
+  windowDays           Int
+  riskLevel            RiskLevel
+  startingCashRub      Decimal               @db.Decimal(14, 2)
+  minProjectedCashRub  Decimal               @db.Decimal(14, 2)
+  explanation          String
+  acknowledgedAt       DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectionPoints     CashProjectionPoint[]
+
+  @@unique([organizationId, assessmentDate, windowDays])
+  @@index([organizationId, assessmentDate])
+}
+
+model CashProjectionPoint {
+  id               String         @id @default(cuid())
+  riskAssessmentId String
+  projectionDate   DateTime
+  inflowRub        Decimal        @default(0) @db.Decimal(14, 2)
+  outflowRub       Decimal        @default(0) @db.Decimal(14, 2)
+  projectedCashRub Decimal        @db.Decimal(14, 2)
+  createdAt        DateTime       @default(now())
+  riskAssessment   RiskAssessment @relation(fields: [riskAssessmentId], references: [id], onDelete: Cascade)
+
+  @@index([riskAssessmentId, projectionDate])
+}
+
+model DailyBrief {
+  id             String       @id @default(cuid())
+  organizationId String
+  syncRunId      String
+  briefDate      DateTime
+  status         BriefStatus
+  headline       String
+  summary        String
+  payload        Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRun        SyncRun      @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, briefDate])
+  @@index([organizationId, briefDate])
+}
+
+model AIInsight {
+  id             String        @id @default(cuid())
+  organizationId String
+  syncRunId      String?
+  skuId          String?
+  insightDate    DateTime
+  kind           InsightKind
+  status         InsightStatus
+  title          String
+  content        String
+  modelName      String?
+  promptVersion  String?
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncRun        SyncRun?      @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  sku            SKU?          @relation(fields: [skuId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, insightDate, kind])
+  @@index([skuId, insightDate])
+}
+
+model AuditLog {
+  id             String         @id @default(cuid())
+  organizationId String
+  actorType      AuditActorType
+  actorId        String?
+  entityType     String
+  entityId       String
+  action         String
+  payload        Json?
+  createdAt      DateTime       @default(now())
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+}

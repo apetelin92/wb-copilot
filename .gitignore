@@ -1,0 +1,20 @@
+.next
+node_modules
+dist
+coverage
+*.log
+*.tsbuildinfo
+.test-dist
+
+# local environment
+.env
+.env.local
+.local-runtime
+.agents
+.codex*
+
+# prisma
+prisma/dev.db
+
+# macOS
+.DS_Store
