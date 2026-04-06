@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { env } from "@/server/lib/env";
+import { prisma } from "@/server/lib/prisma";
 import { AUTH_COOKIE_NAME, signInWithEmail } from "@/server/modules/auth/service";
 import { ensureDemoWorkspaceReady } from "@/server/modules/demo/service";
 import { DEMO_ACCOUNT_EMAIL } from "@/server/modules/workspace/constants";
@@ -17,8 +18,16 @@ export async function GET(request: Request) {
     });
   }
 
-  await ensureDemoWorkspaceReady();
   const user = await signInWithEmail(DEMO_ACCOUNT_EMAIL, { workspaceKind: "demo" });
+
+  const hasDemoData = await prisma.syncRun.findFirst({
+    where: { organizationId: user.organizationId },
+    select: { id: true }
+  });
+
+  if (!hasDemoData) {
+    await ensureDemoWorkspaceReady();
+  }
 
   const response = new NextResponse(null, {
     status: 303,
