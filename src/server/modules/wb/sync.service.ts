@@ -205,8 +205,8 @@ async function replaceNormalizedFinancialData(input: {
       });
     }
   }, {
-    maxWait: 15_000,
-    timeout: 15_000
+    maxWait: 60_000,
+    timeout: 60_000
   });
 }
 
